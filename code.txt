@@ -1,0 +1,192 @@
+/******************* WiFi Robot Remote Control Mode - L298N 2A ********************/
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ArduinoOTA.h>
+
+// Motor pins
+int enA = D1;
+int in1 = D2;
+int in2 = D3;
+int in3 = D4;
+int in4 = D5;
+int enB = D6;
+
+// Buzzer, LED, and Wi-Fi status LED
+const int buzPin = D7;       // Buzzer pin (active buzzer)
+const int ledPin = D8;       // Headlight LED
+const int wifiLedPin = D0;   // WiFi connection indicator
+
+// WiFi credentials
+String sta_ssid = "";        // Enter your WiFi SSID here
+String sta_password = "";    // Enter your WiFi password here
+
+ESP8266WebServer server(80);
+
+String command;              // Incoming command
+int SPEED = 1023;            // Motor speed (330 to 1023)
+int speed_Coeff = 3;
+
+unsigned long previousMillis = 0;
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println();
+  Serial.println("WiFi Robot Remote Control Mode - L298N 2A");
+
+  // Pin setup
+  pinMode(enA, OUTPUT); pinMode(enB, OUTPUT);
+  pinMode(in1, OUTPUT); pinMode(in2, OUTPUT);
+  pinMode(in3, OUTPUT); pinMode(in4, OUTPUT);
+  pinMode(buzPin, OUTPUT); pinMode(ledPin, OUTPUT); pinMode(wifiLedPin, OUTPUT);
+
+  digitalWrite(buzPin, LOW);
+  digitalWrite(ledPin, LOW);
+  digitalWrite(wifiLedPin, HIGH);
+
+  analogWrite(enA, SPEED);
+  analogWrite(enB, SPEED);
+  Stop();
+
+  // WiFi Setup
+  String chip_id = String(ESP.getChipId(), HEX);
+  chip_id = chip_id.substring(chip_id.length() - 4);
+  String hostname = "wificar-" + chip_id;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(sta_ssid.c_str(), sta_password.c_str());
+  Serial.print("Connecting to: "); Serial.println(sta_ssid);
+
+  unsigned long currentMillis = millis();
+  previousMillis = currentMillis;
+
+  while (WiFi.status() != WL_CONNECTED && (millis() - previousMillis < 10000)) {
+    delay(500); Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n*WiFi-STA-Mode*");
+    Serial.print("IP Address: "); Serial.println(WiFi.localIP());
+    digitalWrite(wifiLedPin, LOW);
+  } else {
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(hostname.c_str());
+    IPAddress myIP = WiFi.softAPIP();
+    Serial.println("\nWiFi failed. Switching to WiFi-AP-Mode");
+    Serial.print("AP IP address: "); Serial.println(myIP);
+    digitalWrite(wifiLedPin, HIGH);
+  }
+
+  server.on("/", HTTP_handleRoot);
+  server.onNotFound(HTTP_handleRoot);
+  server.begin();
+
+  ArduinoOTA.begin(); // OTA setup
+}
+
+void loop() {
+  ArduinoOTA.handle();
+  server.handleClient();
+
+  command = server.arg("State");
+
+  if (command == "F") Forward();
+  else if (command == "B") Backward();
+  else if (command == "L") TurnLeft();
+  else if (command == "R") TurnRight();
+  else if (command == "G") ForwardLeft();
+  else if (command == "H") BackwardLeft();
+  else if (command == "I") ForwardRight();
+  else if (command == "J") BackwardRight();
+  else if (command == "S") Stop();
+  else if (command == "V") BeepHorn();
+  else if (command == "W") TurnLightOn();
+  else if (command == "w") TurnLightOff();
+
+  else if (command == "0") SPEED = 330;
+  else if (command == "1") SPEED = 400;
+  else if (command == "2") SPEED = 470;
+  else if (command == "3") SPEED = 540;
+  else if (command == "4") SPEED = 610;
+  else if (command == "5") SPEED = 680;
+  else if (command == "6") SPEED = 750;
+  else if (command == "7") SPEED = 820;
+  else if (command == "8") SPEED = 890;
+  else if (command == "9") SPEED = 960;
+  else if (command == "q") SPEED = 1023;
+}
+
+// HTTP Handlers
+void HTTP_handleRoot() {
+  server.send(200, "text/html", "");
+  if (server.hasArg("State")) {
+    Serial.println(server.arg("State"));
+  }
+}
+
+// Movement Functions
+void Forward() {
+  analogWrite(enA, SPEED); analogWrite(enB, SPEED);
+  digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
+  digitalWrite(in3, HIGH); digitalWrite(in4, LOW);
+}
+
+void Backward() {
+  analogWrite(enA, SPEED); analogWrite(enB, SPEED);
+  digitalWrite(in1, LOW); digitalWrite(in2, HIGH);
+  digitalWrite(in3, LOW); digitalWrite(in4, HIGH);
+}
+
+void TurnLeft() {
+  analogWrite(enA, SPEED); analogWrite(enB, SPEED);
+  digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
+  digitalWrite(in3, LOW); digitalWrite(in4, HIGH);
+}
+
+void TurnRight() {
+  analogWrite(enA, SPEED); analogWrite(enB, SPEED);
+  digitalWrite(in1, LOW); digitalWrite(in2, HIGH);
+  digitalWrite(in3, HIGH); digitalWrite(in4, LOW);
+}
+
+void ForwardLeft() {
+  analogWrite(enA, SPEED); analogWrite(enB, SPEED / speed_Coeff);
+  digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
+  digitalWrite(in3, HIGH); digitalWrite(in4, LOW);
+}
+
+void ForwardRight() {
+  analogWrite(enA, SPEED / speed_Coeff); analogWrite(enB, SPEED);
+  digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
+  digitalWrite(in3, HIGH); digitalWrite(in4, LOW);
+}
+
+void BackwardLeft() {
+  analogWrite(enA, SPEED); analogWrite(enB, SPEED / speed_Coeff);
+  digitalWrite(in1, LOW); digitalWrite(in2, HIGH);
+  digitalWrite(in3, LOW); digitalWrite(in4, HIGH);
+}
+
+void BackwardRight() {
+  analogWrite(enA, SPEED / speed_Coeff); analogWrite(enB, SPEED);
+  digitalWrite(in1, LOW); digitalWrite(in2, HIGH);
+  digitalWrite(in3, LOW); digitalWrite(in4, HIGH);
+}
+
+void Stop() {
+  analogWrite(enA, 0); analogWrite(enB, 0);
+  digitalWrite(in1, LOW); digitalWrite(in2, LOW);
+  digitalWrite(in3, LOW); digitalWrite(in4, LOW);
+}
+
+void BeepHorn() {
+  digitalWrite(buzPin, HIGH); delay(150);
+  digitalWrite(buzPin, LOW);  delay(80);
+}
+
+void TurnLightOn() {
+  digitalWrite(ledPin, HIGH);
+}
+
+void TurnLightOff() {
+  digitalWrite(ledPin, LOW);
+}
